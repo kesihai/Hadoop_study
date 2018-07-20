@@ -39,11 +39,13 @@ public class WordCount {
         }
     }
 
-    public static void main(String[] args) throws IOException {
+    public static void main(String[] args)
+            throws IOException, ClassNotFoundException, InterruptedException {
         if (args.length < 2) {
-            System.out.println("usage: WordCount <inputPath> <outPath>");
+            System.out.println("usage: hadoop jar WordCount-1.0-SNAPSHOT.jar <inputPath> <outPath>");
             return;
         }
+        System.out.println(args.toString());
         Job job = Job.getInstance(new Configuration(), "Word Count");
         job.setJarByClass(WordCount.class);
         job.setMapperClass(Map.class);
@@ -53,5 +55,6 @@ public class WordCount {
         job.setOutputValueClass(IntWritable.class);
         FileInputFormat.addInputPath(job, new Path(args[0]));
         FileOutputFormat.setOutputPath(job, new Path(args[1]));
+        System.exit(job.waitForCompletion(true) ? 1 : 0);
     }
 }
