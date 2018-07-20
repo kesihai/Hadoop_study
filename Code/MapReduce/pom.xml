@@ -8,31 +8,22 @@
         <version>1.0-SNAPSHOT</version>
     </parent>
     <modelVersion>4.0.0</modelVersion>
-
     <artifactId>MapReduce</artifactId>
 
     <properties>
-        <hbase.version>1.2.5</hbase.version>
+        <hadoop.version>2.7.5</hadoop.version>
+        <hadoop-core.verion>1.2.1</hadoop-core.verion>
         <maven-assembly-plugin.version>2.4</maven-assembly-plugin.version>
     </properties>
 
     <dependencies>
         <dependency>
-            <groupId>org.apache.hbase</groupId>
-            <artifactId>hbase-client</artifactId>
-            <version>${hbase.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>org.apache.hbase</groupId>
-            <artifactId>hbase-server</artifactId>
-            <version>${hbase.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>org.apache.hbase</groupId>
-            <artifactId>hbase-hadoop-compat</artifactId>
-            <version>${hbase.version}</version>
+            <groupId>org.apache.hadoop</groupId>
+            <artifactId>hadoop-client</artifactId>
+            <version>${hadoop.version}</version>
         </dependency>
     </dependencies>
+
 
     <build>
         <plugins>
@@ -44,10 +35,20 @@
                     <descriptorRefs>
                         <descriptorRef>jar-with-dependencies</descriptorRef>
                     </descriptorRefs>
+                    <archive>
+                        <manifest>
+                            <mainClass>WordCount</mainClass>
+                        </manifest>
+                    </archive>
                 </configuration>
+                <!--generage the wordCount assembly-->
                 <executions>
                     <execution>
-                        <id>make-assembly</id>
+                        <configuration>
+                            <finalName>WordCount-${project.version}</finalName>
+                            <appendAssemblyId>false</appendAssemblyId>
+                        </configuration>
+                        <id>make-WordCount-assembly</id>
                         <phase>package</phase>
                         <goals>
                             <goal>single</goal>
