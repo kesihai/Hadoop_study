@@ -70,7 +70,7 @@ public class TestStateMachineFactory {
       implements SingleArcTransition<TestStateMachineFactory, DayStatus, Food> {
 
     @Override
-    public DayStatus transition(
+    public DayStatus doTransition(
         TestStateMachineFactory testStateMachineFactory, Food food) {
       System.out.println("I have finish morning food");
       return DayStatus.AFTERNOON;
@@ -81,7 +81,7 @@ public class TestStateMachineFactory {
       implements SingleArcTransition<TestStateMachineFactory, DayStatus, Food> {
 
     @Override
-    public DayStatus transition(
+    public DayStatus doTransition(
         TestStateMachineFactory testStateMachineFactory, Food food) {
       System.out.println("I have finish afternoon food");
       return DayStatus.EVENING;
@@ -92,7 +92,7 @@ public class TestStateMachineFactory {
       implements SingleArcTransition<TestStateMachineFactory, DayStatus, Food> {
 
     @Override
-    public DayStatus transition(
+    public DayStatus doTransition(
         TestStateMachineFactory testStateMachineFactory, Food food) {
       System.out.println("I have finish evening food, and I want to sleep");
       return DayStatus.EVENING;
@@ -114,7 +114,7 @@ public class TestStateMachineFactory {
             DayStatus.EVENING, FoodType.EVENING_FOOD,
             new EveningTranstion(), DayStatus.EVENING);
     StateMachine<DayStatus, FoodType, Food> stateMachine
-        = factory.make(DayStatus.MORNING, new TestStateMachineFactory());
+        = factory.make(new TestStateMachineFactory(), DayStatus.MORNING);
     stateMachine.doTransition(FoodType.MORNING_FOOD, new MorningFood());
     stateMachine.doTransition(FoodType.AFTERNOON_FOOD, new AfterNoonFood());
     stateMachine.doTransition(FoodType.EVENING_FOOD, new EveningFood());
