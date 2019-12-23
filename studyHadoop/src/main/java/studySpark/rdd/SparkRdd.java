@@ -1,4 +1,4 @@
-package rdd;
+package studySpark.rdd;
 
 import org.apache.spark.SparkConf;
 import org.apache.spark.api.java.JavaRDD;

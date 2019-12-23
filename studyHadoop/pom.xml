@@ -11,6 +11,7 @@
     <properties>
         <hadoop.version>2.7.5</hadoop.version>
         <junit.version>4.12</junit.version>
+        <spark.version>2.3.1</spark.version>
         <maven-assembly-plugin.version>2.4</maven-assembly-plugin.version>
     </properties>
 
@@ -30,6 +31,20 @@
             <artifactId>junit</artifactId>
             <version>${junit.version}</version>
             <scope>test</scope>
+        </dependency>
+
+        <!-- dependency for sparks -->
+        <dependency>
+            <groupId>org.apache.spark</groupId>
+            <artifactId>spark-core_2.11</artifactId>
+            <version>${spark.version}</version>
+            <!--            <scope>provided</scope>-->
+        </dependency>
+        <dependency>
+            <groupId>org.apache.spark</groupId>
+            <artifactId>spark-sql_2.11</artifactId>
+            <version>${spark.version}</version>
+            <!-- <scope>provided</scope>-->
         </dependency>
     </dependencies>
 
