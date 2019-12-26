@@ -17,7 +17,7 @@ Below are the demos that I create to study zookeeper.
         + c. Get/monitor worker list under /workers
         + d. Do assignment.
         
-### Life cicle 
+### Lifecycle 
 1. Task
 ```
 create ->               assign ->                     process ->              result.
