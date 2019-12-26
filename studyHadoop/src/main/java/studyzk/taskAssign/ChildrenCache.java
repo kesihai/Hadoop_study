@@ -17,45 +17,30 @@ public class ChildrenCache {
   }
 
   List<String> getList() {
-    return children;
+    return new LinkedList<>(children);
   }
 
-  List<String> addedAndSet( List<String> newChildren) {
-    ArrayList<String> diff = null;
-
-    if(children == null) {
-      diff = new ArrayList<String>(newChildren);
-    } else {
-      for(String s: newChildren) {
-        if(!children.contains( s )) {
-          if(diff == null) {
-            diff = new ArrayList<String>();
-          }
-
-          diff.add(s);
-        }
-      }
-    }
-    this.children = newChildren;
-
-    return diff;
+  void updateList(List<String> children) {
+    this.children = new LinkedList<>(children);
   }
 
-  List<String> removedAndSet( List<String> newChildren) {
-    List<String> diff = null;
-    if(children != null) {
-      for(String s: children) {
-        if(!newChildren.contains( s )) {
-          if(diff == null) {
-            diff = new ArrayList<String>();
-          }
-
-          diff.add(s);
-        }
+  public List<String> getLostNode(List<String> newChildren) {
+    List<String> lostNodes = new LinkedList<>();
+    for (String node : children) {
+      if (!newChildren.contains(node)) {
+        lostNodes.add(node);
       }
     }
-    this.children = newChildren;
+    return lostNodes;
+  }
 
-    return diff;
+  public List<String> getAddNode(List<String> newChildren) {
+    List<String> addNodes = new LinkedList<>();
+    for (String node : newChildren) {
+      if (!children.contains(node)) {
+        addNodes.add(node);
+      }
+    }
+    return addNodes;
   }
 }

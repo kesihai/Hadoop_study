@@ -1,246 +1,153 @@
 package studyzk.taskAssign;
 
-import org.apache.zookeeper.AsyncCallback.ChildrenCallback;
-import org.apache.zookeeper.AsyncCallback.DataCallback;
-import org.apache.zookeeper.AsyncCallback.StringCallback;
-import org.apache.zookeeper.AsyncCallback.VoidCallback;
 import org.apache.zookeeper.CreateMode;
 import org.apache.zookeeper.KeeperException;
-import org.apache.zookeeper.KeeperException.Code;
+import org.apache.zookeeper.KeeperException.ConnectionLossException;
+import org.apache.zookeeper.KeeperException.NodeExistsException;
 import org.apache.zookeeper.WatchedEvent;
 import org.apache.zookeeper.Watcher;
 import org.apache.zookeeper.Watcher.Event.EventType;
+import org.apache.zookeeper.Watcher.Event.KeeperState;
 import org.apache.zookeeper.ZooDefs.Ids;
 import org.apache.zookeeper.ZooKeeper;
 import org.apache.zookeeper.data.Stat;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.spark_project.jetty.util.thread.ExecutorThreadPool;
 
 import java.io.Closeable;
 import java.io.IOException;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
 public class Worker implements Watcher, Closeable {
+  public static List<List<String>> processedTasks = new LinkedList<>();
   private final static Logger LOG = LoggerFactory.getLogger(Worker.class);
 
-  private String connectString;
-  private String workerName;
-  private String registerPath;
-  private String assignPath;
+  private String name;
+  private final String connectString;
   private ZooKeeper zooKeeper;
-  private ThreadPoolExecutor executor;
-  private boolean connected = false;
-  private boolean expired = false;
-  private ChildrenCache childrenCache = new ChildrenCache();
+  private CountDownLatch latch = new CountDownLatch(1);
+  private ChildrenCache ownedTasks = new ChildrenCache();
+  private ExecutorThreadPool executors = new ExecutorThreadPool(1, 1, 600,
+      TimeUnit.SECONDS, new ArrayBlockingQueue<>(200));
 
-  public Worker(String connectString, String workerName) {
+  public Worker(String name, String connectString) {
+    this.name = name;
     this.connectString = connectString;
-    this.workerName = workerName;
-    this.registerPath = Common.workerRegisterPath + "/" + workerName;
-    this.assignPath = Common.workerAssignPath + "/" + workerName;
   }
 
-  public void init() throws IOException {
+  private void init() throws InterruptedException, IOException, KeeperException {
     zooKeeper = new ZooKeeper(connectString, 15000, this);
-    executor = new ThreadPoolExecutor(1, 1, 1000, TimeUnit.SECONDS,
-        new ArrayBlockingQueue<>(200));
+    latch.await();
+    Common.Prepare.prepare(zooKeeper);
   }
 
-  /**
-   * bootstrap is to create /assign parent node.
-   */
-  public void bootstrap() {
-    createAssignNode();
-  }
-
-  private void createAssignNode() {
-    zooKeeper.create(assignPath, new byte[0], Ids.OPEN_ACL_UNSAFE,
-        CreateMode.PERSISTENT, createCallback, null);
-  }
-
-  StringCallback createCallback = new StringCallback() {
-    @Override
-    public void processResult(int rc, String path, Object ctx, String name) {
-      switch (Code.get(rc)) {
-        case CONNECTIONLOSS:
-          createAssignNode();
-          break;
-        case NODEEXISTS:
-          LOG.warn("This path already exists: " + name);
-          break;
-        case OK:
-          LOG.info("create path successfully: " + name);
-          break;
-        default:
-          LOG.error("Something went wrong: " + KeeperException.create(Code.get(rc), path));
-          break;
-      }
+  private void register() throws KeeperException, InterruptedException {
+    try {
+      zooKeeper.create(Common.workerRegisterPath + "/" + name, new byte[0],
+          Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL);
+    } catch (NodeExistsException e) {
+      LOG.info("Path {} exists when create this path.", e.getPath());
     }
-  };
-
-  /**
-   * Registering the new worker by adding a worker znode to /workers.
-   */
-  public void register() {
-    zooKeeper.create(
-        registerPath,
-        new byte[0],
-        Ids.OPEN_ACL_UNSAFE,
-        CreateMode.EPHEMERAL,
-        registerCallback,
-        null);
+    monitorAssignNode();
   }
 
-  StringCallback registerCallback = new StringCallback() {
-    @Override
-    public void processResult(int rc, String path, Object ctx, String name) {
-      switch (Code.get(rc)) {
-        case CONNECTIONLOSS:
-          register();
-          break;
-        case NODEEXISTS:
-          LOG.warn("THis path already exists: " + name);
-          break;
-        case OK:
-          LOG.info("create path successfully: " + name);
-          break;
-        default:
-          LOG.error("Something went wrong " + KeeperException.create(Code.get(rc), path));
-          break;
-      }
-    }
-  };
-
-  public void getTasks() {
-    zooKeeper.getChildren(
-        assignPath,
-        taskMonitorWatcher,
-        childrenCallback,
-        null);
-  }
-
-  Watcher taskMonitorWatcher = new Watcher() {
-    @Override
-    public void process(WatchedEvent event) {
-      if (event.getType() == EventType.NodeChildrenChanged) {
-        getTasks();
-      }
-    }
-  };
-
-  ChildrenCallback childrenCallback = new ChildrenCallback() {
-    @Override
-    public void processResult(int rc, String path, Object ctx, List<String> children) {
-      switch (Code.get(rc)) {
-        case CONNECTIONLOSS:
-          getTasks();
-          break;
-        case OK:
-          executor.execute(new Runnable() {
-            List<String> children;
-            DataCallback cb;
-
-            public Runnable init(List<String> children, DataCallback cb) {
-              this.children = children;
-              this.cb = cb;
-              return this;
-            }
-
-            @Override
-            public void run() {
-              if (children == null) {
-                return;
-              }
-              LOG.info("looping into tasks");
-              setStatus("working");
-              for (String task : children) {
-                LOG.info("new task: {}", task);
-                zooKeeper.getData(assignPath + "/" + task, false, cb, task);
-              }
-            }
-          }.init(childrenCache.addedAndSet(children), dataCallback));
-          break;
-        default:
-          LOG.error("getChildren failed: " + KeeperException.create(Code.get(rc), path));
-          break;
-      }
-    }
-  };
-
-  DataCallback dataCallback = new DataCallback() {
-    @Override
-    public void processResult(int rc, String path, Object ctx, byte[] data, Stat stat) {
-      switch (Code.get(rc)) {
-        case CONNECTIONLOSS:
-          zooKeeper.getData(path, false, dataCallback, path);
-          break;
-        case OK:
-          executor.execute(new Runnable() {
-            byte[] data;
-            Object ctx;
-
-            public Runnable init(byte[] data, Object ctx) {
-              this.data = data;
-              this.ctx = ctx;
-              return this;
-            }
-
-            @Override
-            public void run() {
-              LOG.info("Currently we got task {} data", new String(data));
-              LOG.info("will sleep 2 seconds...");
+  private void monitorAssignNode() throws KeeperException, InterruptedException {
+    Stat stat = zooKeeper.exists(Common.workerAssignPath + "/" + name,
+        new Watcher() {
+          @Override
+          public void process(WatchedEvent event) {
+            if (event.getType() == EventType.NodeCreated) {
               try {
-                Thread.sleep(2000);
-              } catch (InterruptedException e) {
+                monitorTasks();
+              } catch (Exception e) {
+                e.printStackTrace();
+                throw new RuntimeException("Failed to monitor tasks");
               }
-              zooKeeper.create(Common.tasksStatusPath + "/" + ctx,
-                  "done".getBytes(), Ids.OPEN_ACL_UNSAFE,
-                  CreateMode.PERSISTENT, taskStatusCreateCallback, null);
-              zooKeeper.delete(assignPath + "/" + ctx, -1, deleteTaskCallback
-                  , null);
             }
-          }.init(data, ctx));
-      }
+          }
+        });
+    if (stat != null) {
+      monitorTasks();
     }
-  };
+  }
 
-  StringCallback taskStatusCreateCallback = new StringCallback() {
-    @Override
-    public void processResult(int rc, String path, Object ctx, String name) {
-      switch (Code.get(rc)) {
-        case CONNECTIONLOSS:
-          zooKeeper.create(path, "done".getBytes(), Ids.OPEN_ACL_UNSAFE,
-              CreateMode.PERSISTENT, taskStatusCreateCallback, null);
-          break;
-        case NODEEXISTS:
-          LOG.warn("Node exists: " + path);
-          break;
-        case OK:
-          LOG.info("Create status znode correctly: " + name);
-          break;
-        default:
-          LOG.error("Failed to create task status: " + KeeperException.create(Code.get(rc), path));
+  private void monitorTasks() throws KeeperException, InterruptedException {
+    LOG.info("Worker will monitor tasks");
+    List<String> tasks =
+        zooKeeper.getChildren(Common.workerAssignPath + "/" + name,
+        new Watcher() {
+      @Override
+      public void process(WatchedEvent event) {
+        if (event.getType() == EventType.NodeChildrenChanged) {
+          try {
+            monitorTasks();
+          } catch (KeeperException e) {
+            e.printStackTrace();
+          } catch (InterruptedException e) {
+            e.printStackTrace();
+          }
+        }
       }
-    }
-  };
+    });
+    List<String> needProcessTask = ownedTasks.getAddNode(tasks);
+    ownedTasks.updateList(tasks);
+    processTasks(Common.workerAssignPath + "/" + name, needProcessTask);
+  }
 
-  VoidCallback deleteTaskCallback = new VoidCallback() {
-    @Override
-    public void processResult(int rc, String path, Object ctx) {
-      switch (Code.get(rc)) {
-        case CONNECTIONLOSS:
-        case OK:
-        default:
-          LOG.error("Failed to delete task data: " + KeeperException.create(Code.get(rc), path));
+  private void processTasks(String root, List<String> tasks) {
+
+    if (tasks == null) {
+      return;
+    }
+    LOG.info("Will process new {} tasks.", tasks.size());
+    processedTasks.add(new LinkedList<>(tasks));
+    tasks.forEach(x -> executors.execute(new Runnable() {
+      private String path;
+      @Override
+      public void run() {
+        try {
+          String data = new String(zooKeeper.getData(path, false, null));
+          // currently we get the data, and could deal with the task.
+          Thread.sleep(500);
+          String taskname = path.substring(path.lastIndexOf('/') + 1);
+          // after process the task, then create finish node.
+          try {
+            zooKeeper.create(Common.tasksStatusPath + "/" + taskname,
+                "done".getBytes(), Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+          } catch (ConnectionLossException e) {
+            // currently will only do one retry, need think about zk
+            // connection lost issue.
+            LOG.warn("First time failed to create " + taskname);
+            zooKeeper.create(Common.tasksStatusPath + "/" + taskname,
+                "done".getBytes(), Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+          }
+
+          // delete task assign path.
+          zooKeeper.delete(path, -1);
+          LOG.info("Task {} has been processed.", taskname);
+        } catch (KeeperException e) {
+          e.printStackTrace();
+        } catch (InterruptedException e) {
+          e.printStackTrace();
+        }
       }
-    }
-  };
 
-  private void setStatus(String status) {
+      public Runnable init(String path) {
+        this.path = path;
+        return this;
+      }
+    }.init(root + "/" + x)));
+  }
 
+
+  public void start() throws InterruptedException, IOException, KeeperException {
+    init();
+    register();
   }
 
   @Override
@@ -255,38 +162,18 @@ public class Worker implements Watcher, Closeable {
   @Override
   public void process(WatchedEvent event) {
     if (event.getType() == EventType.None) {
-      switch (event.getState()) {
-        case SyncConnected:
-          connected = true;
-          expired = false;
-          break;
-        case Disconnected:
-          LOG.warn("Disconnected from zk !");
-          connected = false;
-        case Expired:
-          connected = false;
-          expired = true;
-          break;
-        default:
-          break;
+      if (event.getState() == KeeperState.SyncConnected) {
+        latch.countDown();
+      } else if (event.getState() == KeeperState.Expired) {
+        throw new RuntimeException("Session expired");
       }
     }
   }
 
-  public static void main(String[] args) throws IOException, InterruptedException {
-    Worker worker = new Worker("localhost:2181", "work1");
+  public static void main(String[] args) throws InterruptedException, IOException, KeeperException {
+    Worker worker = new Worker("work1", "localhost:2181");
     worker.init();
-    while (!worker.connected) {
-      LOG.info("waiting for zk connection");
-      Thread.sleep(100);
-    }
-
-    worker.bootstrap();
     worker.register();
-    worker.getTasks();
-
-    while (!worker.expired) {
-      Thread.sleep(1000);
-    }
+    worker.start();
   }
 }

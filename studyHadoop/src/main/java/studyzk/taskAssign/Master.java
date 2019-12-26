@@ -1,25 +1,22 @@
 package studyzk.taskAssign;
 
-import org.apache.zookeeper.AsyncCallback.ChildrenCallback;
-import org.apache.zookeeper.AsyncCallback.DataCallback;
-import org.apache.zookeeper.AsyncCallback.StatCallback;
-import org.apache.zookeeper.AsyncCallback.StringCallback;
-import org.apache.zookeeper.AsyncCallback.VoidCallback;
 import org.apache.zookeeper.CreateMode;
 import org.apache.zookeeper.KeeperException;
-import org.apache.zookeeper.KeeperException.Code;
+import org.apache.zookeeper.KeeperException.NodeExistsException;
 import org.apache.zookeeper.WatchedEvent;
 import org.apache.zookeeper.Watcher;
 import org.apache.zookeeper.Watcher.Event.EventType;
+import org.apache.zookeeper.Watcher.Event.KeeperState;
 import org.apache.zookeeper.ZooDefs.Ids;
 import org.apache.zookeeper.ZooKeeper;
-import org.apache.zookeeper.data.Stat;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.Closeable;
 import java.io.IOException;
 import java.util.List;
+import java.util.Random;
+import java.util.concurrent.CountDownLatch;
 
 public class Master implements Watcher, Closeable {
 
@@ -28,258 +25,163 @@ public class Master implements Watcher, Closeable {
   private String name;
   private String connectString;
   private ZooKeeper zooKeeper;
-  private boolean connected = false;
-  private boolean expired = false;
   private MasterStatus status = MasterStatus.RUNNING;
   private ChildrenCache taskscache = new ChildrenCache();
   private ChildrenCache workersChace = new ChildrenCache();
+  private CountDownLatch latch = new CountDownLatch(1);
+  private Random random = new Random();
 
-  public Master(String hostname, String name) {
-    this.connectString = hostname;
+  public Master(String name, String connectString) {
     this.name = name;
+    this.connectString = connectString;
   }
 
-  public void startZk() throws IOException {
-    zooKeeper = new ZooKeeper(connectString, 15000, this);
+  public void start() throws IOException, InterruptedException {
+    zooKeeper = new ZooKeeper(connectString, Common.timeout, this);
+    latch.await();
+    Common.Prepare.prepare(zooKeeper);
+    tryToBecomeActive();
   }
 
-  public void bootStrap() {
-    createParent(Common.workerRegisterPath, new byte[0]);
-    createParent(Common.tasksCreatePath, new byte[0]);
-    createParent(Common.workerAssignPath, new byte[0]);
-    createParent(Common.tasksStatusPath, new byte[0]);
-  }
-
-  private void createParent(String path, byte[] data) {
-    zooKeeper.create(path, data, Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT,
-        createparentCallback, data);
-  }
-
-  private StringCallback createparentCallback = new StringCallback() {
-    @Override
-    public void processResult(int rc, String path, Object ctx, String name) {
-      switch (Code.get(rc)) {
-        case CONNECTIONLOSS:
-          createParent(path, (byte[])ctx);
-          break;
-        case NODEEXISTS:
-          LOG.info("node {} already exists.", path);
-          break;
-        case OK:
-          LOG.info(" create node {} successfully", path);
-          break;
-        default:
-          LOG.error("something went wrong  " + KeeperException.create(Code.get(rc), path));
+  private void tryToBecomeActive() {
+    try {
+      if (becomeActive()) {
+        LOG.info("{} become active and will take lead ship.", name);
+        takeLeadShip();
+      } else {
+        monitorMasterStatus();
       }
-    }
-  };
-
-  public void runForMaster() {
-    LOG.info("running for master");
-    zooKeeper.create(Common.masterPath, name.getBytes(), Ids.OPEN_ACL_UNSAFE,
-        CreateMode.EPHEMERAL, masterCreateCallback, null);
-  }
-
-  private StringCallback masterCreateCallback = new StringCallback() {
-    @Override
-    public void processResult(int rc, String path, Object ctx, String name) {
-      switch (Code.get(rc)) {
-        case CONNECTIONLOSS:
-          checkMaster();
-          break;
-        case NODEEXISTS:
-          status = MasterStatus.NOTELECTED;
-          masterExists();
-          break;
-        case OK:
-          takeLeadShip();
-          break;
-        default:
-          LOG.error("something went wrong when runForMaster.");
-      }
-    }
-  };
-
-  private void checkMaster() {
-    zooKeeper.getData(Common.masterPath, false, checkMasterCallback, null);
-  }
-
-  private DataCallback checkMasterCallback = new DataCallback() {
-    @Override
-    public void processResult(int rc, String path, Object ctx, byte[] data, Stat stat) {
-      switch (Code.get(rc)) {
-        case CONNECTIONLOSS:
-          checkMaster();
-          break;
-        case NONODE:
-          runForMaster();
-          break;
-        case OK:
-          if (name.equals(new String(data))) {
-            status = MasterStatus.ELECTED;
-            takeLeadShip();
-          } else {
-            status = MasterStatus.NOTELECTED;
-            masterExists();
-          }
-          break;
-        default:
-          LOG.error("something went wrong when read data." + KeeperException.create(Code.get(rc), path));
-      }
-    }
-  };
-
-  private void takeLeadShip() {
-    LOG.info("Is going to take a leadship");
-
-  }
-
-  private void getWorkers() {
-    zooKeeper.getChildren(Common.workerRegisterPath, workersChangeWatcher,
-        getWorkersCallback, null);
-  }
-
-  private Watcher workersChangeWatcher = new Watcher() {
-    @Override
-    public void process(WatchedEvent event) {
-      if (event.getType() == EventType.NodeChildrenChanged) {
-        assert Common.workerRegisterPath.equals(event.getPath());
-        getWorkers();
-      }
-    }
-  };
-
-  private ChildrenCallback getWorkersCallback = new ChildrenCallback() {
-    @Override
-    public void processResult(int rc, String path, Object ctx, List<String> children) {
-      switch (Code.get(rc)) {
-        case CONNECTIONLOSS:
-          getWorkers();
-          break;
-        case OK:
-          LOG.info("Successfully got {} workers.", children.size());
-          reassignAndSet(children);
-          break;
-        default:
-          LOG.error("getChildren failed" + KeeperException.create(Code.get(rc), path));
-      }
-    }
-  };
-
-  private void reassignAndSet(List<String> children) {
-    List<String> toProcess = workersChace.removedAndSet(children);
-    toProcess.forEach(x -> getAbsentWorkerTasks(x));
-
-  }
-
-  private void getAbsentWorkerTasks(String worker) {
-    zooKeeper.getChildren(Common.workerAssignPath + "/" + worker, false,
-        workerAssignCallback, null);
-  }
-
-  private ChildrenCallback workerAssignCallback = new ChildrenCallback() {
-    @Override
-    public void processResult(int rc, String path, Object ctx, List<String> children) {
-      switch (Code.get(rc)) {
-        case CONNECTIONLOSS:
-          getAbsentWorkerTasks(path.substring(path.lastIndexOf('/') + 1));
-          break;
-        case OK:
-          LOG.info("successfully got a list of assignments: {} tasks",
-              children.size());
-          children.forEach(task -> getDataReassign(path + "/" + task, task));
-          break;
-        default:
-          LOG.error("getChildren failed" + KeeperException.create(Code.get(rc), path));
-      }
-    }
-  };
-
-  private void getDataReassign(String path, String task) {
-    zooKeeper.getData(path, false, getDataCallback, task);
-  }
-
-  private DataCallback getDataCallback = new DataCallback() {
-    @Override
-    public void processResult(int rc, String path, Object ctx, byte[] data, Stat stat) {
-      switch (Code.get(rc))  {
-        case CONNECTIONLOSS:
-          getDataReassign(path, (String)ctx);
-          break;
-        case OK:
-          recreateTask(new RecreateTaskCtx(path, (String)ctx, data));
-        default:
-          LOG.error("Something went wrong when getting data " + KeeperException.create(Code.get(rc), (String)ctx));
-      }
-    }
-  };
-
-  private class RecreateTaskCtx {
-    String path;
-    String task;
-    byte[] data;
-
-    RecreateTaskCtx(String path, String task, byte[] data) {
-      this.path = path;
-      this.task = task;
-      this.data = data;
+    } catch (Exception e) {
+      throw new RuntimeException("Meet exception when " + name + " try to " +
+          "become active master: " + e) ;
     }
   }
 
-  private void recreateTask(RecreateTaskCtx task) {
-    zooKeeper.create(Common.tasksCreatePath, task.data, Ids.OPEN_ACL_UNSAFE,
-        CreateMode.PERSISTENT, recreateTaskcallback, task);
-  }
-
-  StringCallback recreateTaskcallback = new StringCallback() {
-    @Override
-    public void processResult(int rc, String path, Object ctx, String name) {
-      switch (Code.get(rc)) {
-        case CONNECTIONLOSS:
-          recreateTask((RecreateTaskCtx)ctx);
-          break;
-        case OK:
-
-      }
+  private boolean becomeActive() throws KeeperException, InterruptedException {
+    try {
+      zooKeeper.create(Common.masterPath, name.getBytes(),
+          Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL);
+      return true;
+    } catch (NodeExistsException e) {
     }
-  };
-
-  private void deleteAssignment(String path) {
-
+    return false;
   }
 
-  private void masterExists() {
-    zooKeeper.exists(Common.masterPath, masterExistisWatcher,
-        masterExistsCallback, null);
+  private void monitorMasterStatus() throws KeeperException, InterruptedException {
+    zooKeeper.exists(Common.masterPath, monitorMasterWatcher);
   }
 
-  private Watcher masterExistisWatcher = new Watcher() {
+  private Watcher monitorMasterWatcher = new Watcher() {
     @Override
     public void process(WatchedEvent event) {
       if (event.getType() == EventType.NodeDeleted) {
-        runForMaster();
+          tryToBecomeActive();
       }
     }
   };
 
-  private StatCallback masterExistsCallback = new StatCallback() {
-    @Override
-    public void processResult(int rc, String path, Object ctx, Stat stat) {
-      switch (Code.get(rc)) {
-        case CONNECTIONLOSS:
-          checkMaster();
-          break;
-        case NONODE:
-          runForMaster();
-          break;
-        case OK:
-          break;
-        default:
-          LOG.error("Something went wrong when monitor master node."
-              + KeeperException.create(Code.get(rc), path));
+  private void takeLeadShip() throws KeeperException, InterruptedException {
+    // when master start, some workers may already failed that means workers
+    // exist in /workers but not exists in /assign, so let's add workers
+    // under /assign to active workers and trigger workListChanged event.
+    this.workersChace.updateList(getAssignWorkers());
+    workerListChange();
+    taskListChanged();
+  }
+
+  private List<String> getActiveWorkers() throws KeeperException, InterruptedException {
+    return zooKeeper.getChildren(Common.workerRegisterPath, new Watcher() {
+      @Override
+      public void process(WatchedEvent event) {
+        workerListChange();
       }
+    });
+  }
+
+  private List<String> getAssignWorkers() throws KeeperException, InterruptedException {
+    return zooKeeper.getChildren(Common.workerAssignPath, false);
+  }
+
+  private List<String> getTasks() throws KeeperException, InterruptedException {
+    return zooKeeper.getChildren(Common.tasksCreatePath, new Watcher() {
+      @Override
+      public void process(WatchedEvent event) {
+        if (event.getType() == EventType.NodeChildrenChanged) {
+          taskListChanged();
+        }
+      }
+    });
+  }
+
+  private void workerListChange() {
+    LOG.info("Worker list change.");
+    try {
+      List<String> activeWorkers = getActiveWorkers();
+      List<String> lostWorkers = workersChace.getLostNode(activeWorkers);
+      workersChace.updateList(activeWorkers);
+      handleWorkLost(Common.workerAssignPath, lostWorkers);
+    } catch (InterruptedException e) {
+      workerListChange();
+    } catch (KeeperException e) {
+      throw new RuntimeException("Exception when handle workerListChange." + e);
     }
-  };
+  }
+
+  private void taskListChanged() {
+    LOG.info("Task list changed.");
+    try {
+      List<String> tasks = getTasks();
+      List<String> newTasks = taskscache.getAddNode(tasks);
+      taskscache.updateList(tasks);
+      doAssignment(newTasks);
+    } catch (InterruptedException e) {
+      taskListChanged();
+    } catch (KeeperException e) {
+      throw new RuntimeException("Exception when handle taskListChanged " + e);
+    }
+  }
+
+  private void handleWorkLost(String path, List<String> workers) throws KeeperException, InterruptedException {
+    for (String worker : workers) {
+      List<String> tasks = zooKeeper.getChildren(path + '/' + worker, false);
+      for (String task : tasks) {
+        String taskPath = path + '/' + worker + '/' + task;
+        byte[] data = zooKeeper.getData(taskPath, false, null);
+        zooKeeper.create(Common.tasksCreatePath + '/' + task, data,
+            Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+        zooKeeper.delete(taskPath, -1);
+      }
+      zooKeeper.delete(path + '/' + worker, -1);
+    }
+  }
+
+  private void doAssignment(List<String> tasks) throws KeeperException, InterruptedException {
+    if (workersChace.children.size() == 0) {
+      LOG.warn("There is no active workers, won't do assinment.");
+      return;
+    }
+    LOG.info("Will assign {} tasks.", tasks.size());
+    for (String task : tasks) {
+      int index = random.nextInt(workersChace.children.size());
+      String worker = workersChace.children.get(index);
+      assignTask(task, worker);
+    }
+  }
+
+  private void assignTask(String task, String worker) throws KeeperException, InterruptedException {
+    LOG.info("Will assign task {} to worker {}", task, worker);
+    String path = Common.workerAssignPath + '/' + worker;
+    if (zooKeeper.exists(path, false) == null) {
+      zooKeeper.create(path, new byte[0], Ids.OPEN_ACL_UNSAFE,
+          CreateMode.PERSISTENT);
+    }
+    String taskPath = Common.tasksCreatePath + '/' + task;
+    byte[] data = zooKeeper.getData(taskPath, false, null);
+    zooKeeper.create(path + '/' + task, data, Ids.OPEN_ACL_UNSAFE,
+        CreateMode.PERSISTENT);
+    zooKeeper.delete(taskPath, -1);
+    LOG.info("Finish assign task {} to worker {}", task, worker);
+  }
 
   @Override
   public void close() throws IOException {
@@ -295,38 +197,9 @@ public class Master implements Watcher, Closeable {
   @Override
   public void process(WatchedEvent event) {
     if (event.getType() == EventType.None) {
-      switch (event.getState()) {
-        case SyncConnected:
-          connected = true;
-          expired = false;
-          break;
-        case Disconnected:
-          connected = false;
-          break;
-        case Expired:
-          LOG.error("session expiration");
-          connected = false;
-          expired = true;
-
-          break;
-        default:
-          break;
+      if (event.getState() == KeeperState.SyncConnected) {
+        latch.countDown();
       }
     }
-  }
-
-  public static void main(String[] args) throws IOException, InterruptedException {
-    Master master = new Master("localhost:2181", args[0]);
-    master.startZk();
-    while (!master.connected) {
-      Thread.sleep(100);
-    }
-
-    master.bootStrap();
-    master.runForMaster();
-    while (!master.expired) {
-      Thread.sleep(1000);
-    }
-    master.close();
   }
 }

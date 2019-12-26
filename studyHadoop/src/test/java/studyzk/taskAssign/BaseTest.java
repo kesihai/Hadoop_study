@@ -8,6 +8,7 @@ import org.slf4j.LoggerFactory;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.util.Arrays;
 
 public class BaseTest {
   private static final Logger LOG = LoggerFactory.getLogger(studyzk.taskAssign.BaseTest.class);
@@ -48,8 +49,18 @@ public class BaseTest {
   @After
   public void tearDown() throws Exception {
     this.zkServer.shutdown();
-//    if (!new File(tempDir).delete()) {
-//      throw new Exception("failed to delete " + tempDir);
-//    }
+    Thread.sleep(1000);
+    delete(new File(tempDir));
+  }
+
+  private void delete(File path) {
+    LOG.info("will delete path {}", path);
+    if (!path.exists()) {
+      return;
+    }
+    if (path.isDirectory()) {
+      Arrays.stream(path.list()).forEach(x -> delete(new File(path, x)));
+    }
+    path.delete();
   }
 }

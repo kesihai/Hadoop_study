@@ -21,23 +21,28 @@ public interface Common {
   String tasksCreatePath =  "/create";
   String tasksStatusPath =  "/status";
 
+  // Other config for zookeeper
+  int timeout = 15000;
+  String connectString = "localhost:2181";
+
   final class Prepare {
     private final static Logger LOG = LoggerFactory.getLogger(Prepare.class);
 
-    public static void prepare(ZooKeeper zk) throws KeeperException,
-        InterruptedException {
+    public static void prepare(ZooKeeper zk) {
       createNode(zk, workerAssignPath);
       createNode(zk, workerRegisterPath);
       createNode(zk, tasksCreatePath);
       createNode(zk, tasksStatusPath);
     }
 
-    private static void createNode(ZooKeeper zk, String path)
-        throws KeeperException, InterruptedException {
+    private static void createNode(ZooKeeper zk, String path) {
       try {
         zk.create(path, new byte[0], Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
       } catch (NodeExistsException e) {
-        LOG.info("node {} already exists when create it, then ignore it.", path);
+        LOG.info("Node {} already exists when create it, then ignore it.", path);
+      } catch (Exception e) {
+        e.printStackTrace();
+        LOG.error("Prepare failed to prepare.");
       }
     }
   }
