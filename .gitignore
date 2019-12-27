@@ -1,7 +1,5 @@
 **idea/
 *.iml
 target
-# ignore some personal file under resources
-resources
 *.log
 temp
