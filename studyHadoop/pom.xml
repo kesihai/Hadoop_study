@@ -13,6 +13,7 @@
         <junit.version>4.12</junit.version>
         <spark.version>2.3.1</spark.version>
         <zookeeper.version>3.4.8</zookeeper.version>
+        <flink.version>1.10.0</flink.version>
         <maven-assembly-plugin.version>2.4</maven-assembly-plugin.version>
     </properties>
 
@@ -54,6 +55,32 @@
             <artifactId>zookeeper</artifactId>
             <version>${zookeeper.version}</version>
 <!--            <scope>provided</scope>-->
+        </dependency>
+        <dependency>
+            <groupId>com.lmax</groupId>
+            <artifactId>disruptor</artifactId>
+            <version>3.4.2</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.apache.flink</groupId>
+            <artifactId>flink-walkthrough-datastream-java</artifactId>
+            <version>${flink.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.flink</groupId>
+            <artifactId>flink-streaming-java_2.11</artifactId>
+            <version>${flink.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.flink</groupId>
+            <artifactId>flink-walkthrough-common_2.11</artifactId>
+            <version>${flink.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.flink</groupId>
+            <artifactId>flink-connector-kafka-0.11_2.11</artifactId>
+            <version>${flink.version}</version>
         </dependency>
     </dependencies>
 
