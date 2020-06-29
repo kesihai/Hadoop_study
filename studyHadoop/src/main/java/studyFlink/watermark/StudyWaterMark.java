@@ -1,13 +1,15 @@
 package studyFlink.watermark;
 
-import org.apache.flink.api.java.tuple.Tuple2;
+import org.apache.flink.api.common.typeinfo.TypeInformation;
 import org.apache.flink.streaming.api.TimeCharacteristic;
 import org.apache.flink.streaming.api.datastream.DataStream;
+import org.apache.flink.streaming.api.datastream.SingleOutputStreamOperator;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.functions.AssignerWithPeriodicWatermarks;
 import org.apache.flink.streaming.api.watermark.Watermark;
 import org.apache.flink.streaming.api.windowing.assigners.TumblingEventTimeWindows;
 import org.apache.flink.streaming.api.windowing.time.Time;
+import org.apache.flink.util.OutputTag;
 
 import javax.annotation.Nullable;
 import java.text.ParseException;
@@ -18,6 +20,7 @@ public class StudyWaterMark {
       new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
 
   private static class Data {
+    int index;
     long date;
     String name;
     long num;
@@ -34,11 +37,12 @@ public class StudyWaterMark {
           '}';
     }
 
-    public Data(String name, long date) {
-      this(name, date, 1);
+    public Data(int index, String name, long date) {
+      this(index, name, date, 1);
     }
 
-    public Data(String name, Long date, long num) {
+    public Data(int index, String name, Long date, long num) {
+      this.index = index;
       this.name = name;
       this.date = date;
       this.num = num;
@@ -46,9 +50,10 @@ public class StudyWaterMark {
 
     public static Data str2Data(String str) {
       try {
-        long date = dateFormat.parse(str.split(",")[1]).getTime();
-        String name = str.split(",")[0];
-        return new Data(name, date);
+        long date = dateFormat.parse(str.split(",")[2]).getTime();
+        String name = str.split(",")[1];
+        int index = Integer.valueOf(str.split(",")[0]);
+        return new Data(index, name, date);
       } catch (ParseException e) {
         e.printStackTrace();
         return null;
@@ -62,19 +67,25 @@ public class StudyWaterMark {
     env.setStreamTimeCharacteristic(TimeCharacteristic.EventTime);
     env.setParallelism(1);
     DataStream<String> text = env.socketTextStream("localhost", 9000);
-    text.map(x -> Data.str2Data(x))
-        .assignTimestampsAndWatermarks(new MyWaterMark())
-        .keyBy(x -> x.name)
-        .window(TumblingEventTimeWindows.of(Time.seconds(5)))
-        .reduce((a, b) -> new Data(a.name, b.date, a.num + b.num))
-        .print();
-
+    final OutputTag<Data> outputTag = new OutputTag<>("side-output",
+        TypeInformation.of(Data.class));
+    SingleOutputStreamOperator<Data> dataDtream =
+        text.map(x -> Data.str2Data(x))
+            .assignTimestampsAndWatermarks(new MyWaterMark())
+            .keyBy(x -> x.index)
+            .window(TumblingEventTimeWindows.of(Time.seconds(5)))
+            .allowedLateness(Time.seconds(2))
+            .sideOutputLateData(outputTag)
+            .reduce((a, b) -> new Data(a.index, a.name + " " + b.name, b.date,
+                a.num + b.num));
+    dataDtream.print("normal print");
+    dataDtream.getSideOutput(outputTag).print("side-print");
     env.execute();
   }
 
   private static class MyWaterMark implements AssignerWithPeriodicWatermarks<Data> {
 
-    long maxOutOfOrder = 10000L;
+    long maxOutOfOrder = 3000L;
     long currentMaxTimeStamp = 0L;
 
     @Nullable
@@ -90,9 +101,9 @@ public class StudyWaterMark {
           "name: %s date: %s currentTimeStamp: %s  waterMark: %s",
           element.name,
           dateFormat.format(element.date),
-          dateFormat.format(currentMaxTimeStamp),
+          dateFormat.format(element.date),
           dateFormat.format(getCurrentWatermark().getTimestamp())));
-      return currentMaxTimeStamp;
+      return element.date;
     }
   }
 }
