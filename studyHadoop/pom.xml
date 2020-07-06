@@ -11,13 +11,14 @@
     <properties>
         <hadoop.version>2.7.5</hadoop.version>
         <junit.version>4.12</junit.version>
-        <spark.version>2.3.1</spark.version>
+        <spark.version>2.2.2</spark.version>
         <zookeeper.version>3.4.8</zookeeper.version>
         <flink.version>1.10.0</flink.version>
         <maven-assembly-plugin.version>2.4</maven-assembly-plugin.version>
         <maven.test.skip>true</maven.test.skip>
         <hiverunner.version>5.2.1</hiverunner.version>
-        <hive.version>2.3.7</hive.version>
+        <hive.version>1.2.2</hive.version>
+        <scala.version>2.11.8</scala.version>
     </properties>
 
     <dependencies>
@@ -70,6 +71,7 @@
             <groupId>org.apache.hive</groupId>
             <artifactId>hive-exec</artifactId>
             <version>${hive.version}</version>
+<!--            <scope>provided</scope>-->
         </dependency>
         <dependency>
             <groupId>org.apache.hive</groupId>
@@ -140,6 +142,18 @@
             <scope>provided</scope>
         </dependency>
 
+        <dependency>
+            <groupId>org.apache.flink</groupId>
+            <artifactId>flink-table_2.11</artifactId>
+            <version>1.5.4</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.scala-lang</groupId>
+            <artifactId>scala-library</artifactId>
+            <version>${scala.version}</version>
+<!--            <scope>provided</scope>-->
+        </dependency>
 
         <dependency>
             <groupId>com.klarna</groupId>

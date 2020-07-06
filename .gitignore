@@ -4,3 +4,5 @@ target
 *.log
 temp
 .DS_Store
+*.xls
+*.txt

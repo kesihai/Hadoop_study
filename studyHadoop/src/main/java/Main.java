@@ -18,6 +18,7 @@ public class Main {
   }
 
   public static String getStr(String str) throws IOException {
+    str = Main.class.getClassLoader().getResource(str).getPath();
     File file = new File(str);
     FileInputStream in = new FileInputStream(file);
     Long len = file.length();
@@ -28,9 +29,9 @@ public class Main {
   }
 
   public static void module() throws IOException, WriteException {
-    WritableWorkbook wwb = Workbook.createWorkbook(new File("./a.xls"));
+    WritableWorkbook wwb = Workbook.createWorkbook(new File("./module.xls"));
     WritableSheet ws = wwb.createSheet("module", 0);
-    JsonNode jsonNode = new ObjectMapper().readTree(getStr("src/main/resources/a.txt"));
+    JsonNode jsonNode = new ObjectMapper().readTree(getStr("modules.txt"));
     jsonNode = jsonNode.get("body");
     ws.addCell(new Label(0, 0, "ID"));
     ws.addCell(new Label(1, 0, "moduleName"));
@@ -38,6 +39,7 @@ public class Main {
     ws.addCell(new Label(3, 0, "moduleType"));
     ws.addCell(new Label(4, 0, "tags"));
     ws.addCell(new Label(5, 0, "businessType"));
+    ws.addCell(new Label(6, 0, "项目属性"));
     
     int index = 1;
     for (JsonNode node : jsonNode) {
@@ -49,6 +51,7 @@ public class Main {
       ws.addCell(new Label(j++, index, get(node, "moduleType").toString()));
       ws.addCell(new Label(j++, index, get(node, "tagDTOS").toString()));
       ws.addCell(new Label(j++, index, get(node, "businessType").toString()));
+      ws.addCell(new Label(j++, index, get(node, "projectType")));
       index++;
     }
     wwb.write();
@@ -58,8 +61,7 @@ public class Main {
   public static void ui() throws IOException, WriteException {
     WritableWorkbook wwb = Workbook.createWorkbook(new File("./ui.xls"));
     WritableSheet ws = wwb.createSheet("module", 0);
-    JsonNode jsonNode = new ObjectMapper().readTree(getStr("src/main" +
-        "/resources/ui.txt"));
+    JsonNode jsonNode = new ObjectMapper().readTree(getStr("ui.txt"));
     jsonNode = jsonNode.get("body");
     ws.addCell(new Label(0, 0, "ID"));
     ws.addCell(new Label(1, 0, "moduleName"));
@@ -67,6 +69,7 @@ public class Main {
     ws.addCell(new Label(3, 0, "moduleType"));
     ws.addCell(new Label(4, 0, "tags"));
     ws.addCell(new Label(5, 0, "businessType"));
+    ws.addCell(new Label(6, 0, "项目属性"));
 
     int index = 1;
     for (JsonNode node : jsonNode) {
@@ -78,6 +81,7 @@ public class Main {
       ws.addCell(new Label(j++, index, get(node, "moduleType").toString()));
       ws.addCell(new Label(j++, index, get(node, "tagDTOS").toString()));
       ws.addCell(new Label(j++, index, get(node, "businessType").toString()));
+      ws.addCell(new Label(j++, index, get(node, "projectType")));
       index++;
     }
     wwb.write();
@@ -85,10 +89,9 @@ public class Main {
   }
 
   public static void page() throws IOException, WriteException {
-    WritableWorkbook wwb = Workbook.createWorkbook(new File("./b.xls"));
+    WritableWorkbook wwb = Workbook.createWorkbook(new File("./page.xls"));
     WritableSheet ws = wwb.createSheet("page", 1);
-    JsonNode jsonNode = new ObjectMapper().readTree(getStr(
-        "src/main/resources/page.txt"));
+    JsonNode jsonNode = new ObjectMapper().readTree(getStr("pages.txt"));
     jsonNode = jsonNode.get("body");
 
     ws.addCell(new Label(0, 0, "ID"));
@@ -97,6 +100,7 @@ public class Main {
     ws.addCell(new Label(3, 0, "pageType"));
     ws.addCell(new Label(4, 0, "tags"));
     ws.addCell(new Label(5, 0, "businessType"));
+    ws.addCell(new Label(6, 0, "项目属性"));
 
     int index = 1;
     for (JsonNode node : jsonNode) {
@@ -108,6 +112,7 @@ public class Main {
       ws.addCell(new Label(j++, index, get(node, "pageType").toString()));
       ws.addCell(new Label(j++, index, get(node, "tags").toString()));
       ws.addCell(new Label(j++, index, get(node, "businessType").toString()));
+      ws.addCell(new Label(j++, index, get(node, "projectType")));
       index++;
     }
     wwb.write();
