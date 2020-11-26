@@ -55,9 +55,11 @@ public class TopN {
         .aggregate(new CountAgg(), new WindowResultFunction())
         .keyBy(x -> x.windowEnd)
         .process(new TopNHotItems(3))
+        .setParallelism(2)
         .print();
-    env.execute("Hot Items Job");
 
+    System.out.println(env.getExecutionPlan());
+    env.execute("Hot Items Job");
   }
 
   public static class UserBehavior {

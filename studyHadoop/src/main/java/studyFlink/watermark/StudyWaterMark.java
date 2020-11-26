@@ -65,7 +65,7 @@ public class StudyWaterMark {
     final StreamExecutionEnvironment env =
         StreamExecutionEnvironment.getExecutionEnvironment();
     env.setStreamTimeCharacteristic(TimeCharacteristic.EventTime);
-    env.setParallelism(1);
+    env.setParallelism(5);
     DataStream<String> text = env.socketTextStream("localhost", 9000);
     final OutputTag<Data> outputTag = new OutputTag<>("side-output",
         TypeInformation.of(Data.class));
