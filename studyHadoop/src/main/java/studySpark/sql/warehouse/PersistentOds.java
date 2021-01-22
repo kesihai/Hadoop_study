@@ -9,8 +9,6 @@ import org.apache.spark.sql.functions;
 import org.apache.spark.sql.types.DataTypes;
 import org.apache.spark.sql.types.StructField;
 import org.apache.spark.sql.types.StructType;
-import scala.Function1;
-import scala.collection.TraversableOnce;
 
 import java.io.Serializable;
 
@@ -26,9 +24,17 @@ public class PersistentOds implements Serializable {
     Dataset<Row> dataFrame = spark.read().schema(getSchema()).json(data);
     dataFrame.printSchema();
     dataFrame.show();
-    dataFrame.select(functions.explode_outer(functions.col("body"))).show();
-//    dataFrame.select("body").select("source").select("app").show();
-//        .select(col("app"))
+
+    Dataset<Row> a = dataFrame.select(functions.explode_outer(functions.col("body")).as("body"));
+    a.printSchema();
+    a.show();
+
+    Dataset<Row> b = a
+        .select(functions.col("body.*"))
+        .select(
+            functions.col("source.app").as("app"));
+    b.printSchema();
+    b.show();
   }
 
   private String getPath() {
@@ -59,3 +65,12 @@ public class PersistentOds implements Serializable {
     persistentOds.run();
   }
 }
+
+
+/*
+
+create table ods_log_d (
+  log string
+) partitioned by (dt string);
+
+ */
