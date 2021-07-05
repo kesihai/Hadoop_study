@@ -1,6 +1,7 @@
 package studySpark.stream;
 
 import org.apache.spark.api.java.function.FlatMapFunction;
+import org.apache.spark.api.java.function.MapFunction;
 import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Encoders;
 import org.apache.spark.sql.Row;
@@ -19,7 +20,8 @@ public class SparkStreamWordCount {
         .getOrCreate();
     Dataset<Row> lines = spark.readStream().format("socket").option("host", "localhost").option("port", 9999).load();
     Dataset<String> words = lines.as(Encoders.STRING()).flatMap((FlatMapFunction<String, String>)x -> Arrays.asList(x.split(" ")).iterator(), Encoders.STRING());
-    Dataset<Row> wordCounts = words.groupBy("value").count();
+//    Dataset<Row> wordCounts = words.groupBy("value").count();
+    Dataset<Integer> wordCounts = words.groupBy("value").count().as(Encoders.INT());
     StreamingQuery query = wordCounts.writeStream()
         .format("console")
         .outputMode(OutputMode.Complete())
